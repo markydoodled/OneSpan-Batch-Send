@@ -1,82 +1,112 @@
+# Load required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Function to create a new transaction based on a template and send it to multiple recipients
-function CreateAndSendBatchTransaction {
-    param (
-        [string]$templateID,
-        [string[]]$recipientEmails
-    )
+# Define API key and base URL
+$apiKey = "your_api_key"
+$apiUrl = "https://apps.esignlive.eu/api"
 
-    # Define the OneSpan API endpoint and the API key (replace with your actual API key)
-    $apiUrl = "https://api.onespan.com/api/packages"
-    $apiKey = "YOUR_API_KEY"
-
-    # Create the recipients array
-    $recipients = @()
-    foreach ($email in $recipientEmails) {
-        $recipients += @{
-            "email" = $email
-            "role" = "SIGNER"
-        }
-    }
-
-    # Define the request body for creating a new transaction based on a template
-    $requestBody = @{
-        "templateId" = $templateID
-        "recipients" = $recipients
-    } | ConvertTo-Json -Depth 3
-
-    # Make the API call to create a new transaction
-    try {
-        $response = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers @{ "Authorization" = "Bearer $apiKey"; "Content-Type" = "application/json" } -Body $requestBody
-
-        # Display the transaction ID
-        [System.Windows.Forms.MessageBox]::Show("Transaction Created Successfully. Transaction ID: $($response.id)")
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show("Error: $_")
-    }
+# Define headers for authentication
+$headers = @{
+    "Authorization" = "Basic $apiKey"
 }
 
 # Create the form
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Create And Send Batch OneSpan Transaction"
-$form.Size = New-Object System.Drawing.Size(500, 300)
+$form.Text = "OneSpan Sign Bulk Send"
+$form.Size = New-Object System.Drawing.Size(500, 200)
+$form.StartPosition = "CenterScreen"
 
-# Create the template ID label and textbox
-$templateIDLabel = New-Object System.Windows.Forms.Label
-$templateIDLabel.Text = "Template ID:"
-$templateIDLabel.Location = New-Object System.Drawing.Point(10, 20)
-$form.Controls.Add($templateIDLabel)
+# Create label and textbox for template ID
+$labelTemplateId = New-Object System.Windows.Forms.Label
+$labelTemplateId.Text = "Template ID:"
+$labelTemplateId.Location = New-Object System.Drawing.Point(10, 20)
+$labelTemplateId.Size = New-Object System.Drawing.Size(130, 20)
+$form.Controls.Add($labelTemplateId)
 
-$templateIDTextbox = New-Object System.Windows.Forms.TextBox
-$templateIDTextbox.Location = New-Object System.Drawing.Point(100, 20)
-$templateIDTextbox.Size = New-Object System.Drawing.Size(350, 20)
-$form.Controls.Add($templateIDTextbox)
+$textBoxTemplateId = New-Object System.Windows.Forms.TextBox
+$textBoxTemplateId.Location = New-Object System.Drawing.Point(150, 20)
+$textBoxTemplateId.Size = New-Object System.Drawing.Size(200, 20)
+$form.Controls.Add($textBoxTemplateId)
 
-# Create the recipient emails label and textbox
-$recipientEmailsLabel = New-Object System.Windows.Forms.Label
-$recipientEmailsLabel.Text = "Recipient Emails (Comma-Separated):"
-$recipientEmailsLabel.Location = New-Object System.Drawing.Point(10, 60)
-$form.Controls.Add($recipientEmailsLabel)
+# Create label and textbox for CSV file path
+$labelCsvPath = New-Object System.Windows.Forms.Label
+$labelCsvPath.Text = "CSV File Path:"
+$labelCsvPath.Location = New-Object System.Drawing.Point(10, 60)
+$labelCsvPath.Size = New-Object System.Drawing.Size(130, 20)
+$form.Controls.Add($labelCsvPath)
 
-$recipientEmailsTextbox = New-Object System.Windows.Forms.TextBox
-$recipientEmailsTextbox.Location = New-Object System.Drawing.Point(10, 90)
-$recipientEmailsTextbox.Size = New-Object System.Drawing.Size(450, 100)
-$recipientEmailsTextbox.Multiline = $true
-$form.Controls.Add($recipientEmailsTextbox)
+$textBoxCsvPath = New-Object System.Windows.Forms.TextBox
+$textBoxCsvPath.Location = New-Object System.Drawing.Point(150, 60)
+$textBoxCsvPath.Size = New-Object System.Drawing.Size(200, 20)
+$form.Controls.Add($textBoxCsvPath)
 
-# Create the submit button
-$submitButton = New-Object System.Windows.Forms.Button
-$submitButton.Text = "Create And Send"
-$submitButton.Location = New-Object System.Drawing.Point(10, 200)
-$submitButton.Size = New-Object System.Drawing.Size(150, 30)
-$submitButton.Add_Click({
-    $templateID = $templateIDTextbox.Text
-    $recipientEmails = $recipientEmailsTextbox.Text -split "\s*,\s*"
-    CreateAndSendBatchTransaction -templateID $templateID -recipientEmails $recipientEmails
+# Create a button to browse CSV file
+$buttonBrowse = New-Object System.Windows.Forms.Button
+$buttonBrowse.Text = "Browse..."
+$buttonBrowse.Location = New-Object System.Drawing.Point(360, 60)
+$buttonBrowse.Size = New-Object System.Drawing.Size(80, 30)
+$buttonBrowse.Add_Click({
+    $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
+    $openFileDialog.Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*"
+    if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $textBoxCsvPath.Text = $openFileDialog.FileName
+    }
 })
-$form.Controls.Add($submitButton)
+$form.Controls.Add($buttonBrowse)
+
+# Create a button to submit the form
+$buttonSubmit = New-Object System.Windows.Forms.Button
+$buttonSubmit.Text = "Submit"
+$buttonSubmit.Location = New-Object System.Drawing.Point(150, 100)
+$buttonSubmit.Size = New-Object System.Drawing.Size(80, 30)
+$buttonSubmit.Add_Click({
+    $templateId = $textBoxTemplateId.Text
+    $csvFilePath = $textBoxCsvPath.Text
+
+    if (-not (Test-Path -Path $csvFilePath)) {
+        [System.Windows.Forms.MessageBox]::Show("CSV file not found at path: $csvFilePath", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        return
+    }
+
+    # Function to test the connection
+    try {
+        $testUrl = "$apiUrl/packages"
+        $response = Invoke-RestMethod -Uri $testUrl -Headers $headers -Method Get
+        [System.Windows.Forms.MessageBox]::Show("Connection Successful.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Connection Failed. Error: $_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        return
+    }
+
+    # Function to upload CSV file and bulk send transactions
+    try {
+        $bulkSendUrl = "$apiUrl/packages/$templateId/bulk_send"
+        
+        # Prepare the multipart/form-data body
+        $boundary = [System.Guid]::NewGuid().ToString()
+        $headers["Content-Type"] = "multipart/form-data; boundary=$boundary"
+        $fileContent = [System.IO.File]::ReadAllBytes($csvFilePath)
+        $fileName = [System.IO.Path]::GetFileName($csvFilePath)
+        $fileData = [System.Text.Encoding]::UTF8.GetString($fileContent)
+        $bodyLines = @(
+            "--$boundary",
+            "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
+            "Content-Type: text/csv",
+            "",
+            $fileData,
+            "--$boundary--"
+        )
+        $body = [System.Text.Encoding]::UTF8.GetBytes($bodyLines -join "`r`n")
+
+        # Invoke the API call to bulk send transactions
+        $response = Invoke-RestMethod -Uri $bulkSendUrl -Headers $headers -Method Post -Body $body
+        [System.Windows.Forms.MessageBox]::Show("Bulk Send Successful.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Bulk Send Failed. Error: $_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+})
+$form.Controls.Add($buttonSubmit)
 
 # Show the form
 [void]$form.ShowDialog()
